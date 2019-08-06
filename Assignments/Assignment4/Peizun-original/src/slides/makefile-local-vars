@@ -1,3 +1,0 @@
-MAIN      = slides
-ALL-AUX   = $(MAIN)
-DISTCLEAN = rm -f *.synctex.gz
