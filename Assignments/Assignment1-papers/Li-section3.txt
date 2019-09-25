@@ -1,0 +1,75 @@
+While deterministic TCP replay is a powerful tool for diagnosing TCP
+performance problems, it is not easy to ensure determinism. For the
+above example, if we simply replay with the same socket calls at the
+same times as the runtime, we cannot reproduce the problem(*) Figure 2
+shows that when we replay 100 times, the short flow always has way
+less than 49 ms flow completion times (FCT). In the production where
+there are more flows and more dynamic traffic than our testbed, it is
+more difficult to reproduce the same problem.
+
+(*) We synchronize the clocks among the senders and receivers to 100s of
+nanoseconds precision by PTP (Precision Time Protocol [2])
+
+The key challenge for the deterministic replay is the butterfly
+effect. Packet sending times at hosts often have microsecond-level
+variation between the replay and the runtime. This is caused by the
+inherent host non-determinisms, such as the clock drift, context
+switching, kernel scheduling, and cache state [42].
+
+The small variation gets amplified by the butterfly effect— the closed
+loop interactions between switches and TCP. A small packet sending
+time variation may change the order of packets from different hosts at
+a switch, which causes switch action variations—the switch may drop or
+mark ECN on a different set of packets. This starts the butterfly
+effect in the closed loop between switches and TCP: Switch action
+variations cause TCP behavior variations (e.g., TCP changing
+congestion window size differently). TCP behavior variations change
+its flow sending rates, which affect the queue lengths at all the
+switches the flow traverses ever since and lead to more switch action
+variations. Such a chain reaction between switches and TCP affects
+more and more flows all over the network in multiple rounds.
+
+One may expect that reducing the sending time variation
+(e.g., better clock synchronization, more deterministic packet
+processing time) can improve the replay accuracy. However,
+our experiment shows that even a nanosecond of variation
+can lead to completely different packet-level behaviors.
+
+We run an ns3 simulation [15] to control the sending time
+variation. We use the same topology and traffic as in §2.1. For
+the runtime, we set the host packet processing delay to 10 us,
+the same as what we measure in the testbed. The short flow
+incurs a long flow completion time because of the correlated
+RTO and delayed ACK. We then replay the experiment with
+the same socket calls and timings. To simulate different levels
+of sending time variation, we simulate a normal distribution
+of host packet processing delay with the same mean delay of
+10 us but with a standard deviation ranging from 0 to 1000 ns.
+For each level, we replay 100 times.
+
+Figure 3 shows the percentage of replays that reproduce
+the correlated RTO and ACK delay on the short flow. Once
+the sending time variation exceeds zero, even just 1 ns, the
+probability of reproducing the same problem suddenly drops.
+
+This is because with a non-zero sending time variation,
+there is always a chance that a switch takes different actions
+on a packet between the runtime and the replay. Smaller
+timing variation can only delay the appearance of different ac
+tions, but cannot prevent it. Once the switch takes a different
+action, the butterfly effect starts, causing a chain reaction of
+changing sending rates and queue lengths. The chain reaction
+persists regardless of the level of the sending time variation.
+
+Figure 4 illustrates this. We show the time series of queue
+length difference between runtime and replay experienced
+by each packet. For each level of sending time variation, we
+show a typical one of the 100 replays2. For 1 ns variations,
+although the queue length difference starts later than with
+higher variations, once the difference starts at 12 ms, it never
+goes down to 0.
+
+This result indicates that we cannot simply rely on reducing
+the sending time variation. This motivates our DETER design,
+which decouples the TCP and the network so that switch
+action variations cannot affect TCP.
